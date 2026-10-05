@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Statyka 3D – solver FEM</title>
+  <style>
+    :root {
+      --bg: #ececec;
+      --header: #3a6d8c;
+      --accent: #2c5aa0;
+      --border: #9a9a9a;
+      --table-h: #d4dce4;
+      --selected: #ffe082;
+      --red:#e53935; --green:#43a047; --blue:#1e88e5;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      font-size: 13px;
+      background: var(--bg);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .top-menu { background: linear-gradient(#f8f8f8,#e0e0e0); border-bottom:1px solid var(--border); padding:4px 8px; display:flex; gap:4px; align-items:center; }
+    .mode { padding: 6px 16px; border-radius: 3px; font-weight: 700; border:1px solid transparent; cursor:pointer; }
+    .mode.active { background: var(--accent); color: white; border-color: #1a3a60; }
+    .mode:hover { background:#dfeaf4; }
+    .spacer { flex:1; }
+    .status { font-size: 12px; color: #333; margin-left: 8px; }
+    .toolbar { background:#f4f4f4; border-bottom:1px solid var(--border); padding:4px 8px; display:flex; gap:4px; align-items:center; flex-wrap:wrap; min-height:36px; }
+    .toolbar button { height:28px; padding:0 10px; border:1px solid #bbb; background:#fff; border-radius:3px; cursor:pointer; font-size:12px; }
+    .toolbar button:hover { background:#e4ecf4; }
+    .toolbar button.calc { background:#c8e6c9; border-color:#4caf50; font-weight:700; }
+    .toolbar .sep { width:1px; height:22px; background:#ccc; margin:0 6px; }
+    .toolbar label { font-size:12px; color:#444; margin-left:4px; }
+    .toolbar select, .toolbar input[type=number] { padding:2px 5px; border:1px solid #aaa; border-radius:3px; font-size:12px; }
+    .main { flex:1; display:flex; overflow:hidden; }
+    .left-tools { width:52px; background:#e4e4e4; border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; padding:6px 0; gap:3px; }
+    .left-tools button { width:42px; height:42px; border:1px solid transparent; background:transparent; border-radius:4px; cursor:pointer; font-size:16px; position:relative; }
+    .left-tools button:hover { background:#d0d8e0; }
+    .left-tools button.active { background:#b0c4d8; border-color:#5070a0; }
+    .left-tools .sep { width:32px; height:1px; background:#bbb; margin:5px 0; }
+    .left-tools .tip { position:absolute; left:50px; top:6px; background:#222; color:#fff; padding:4px 8px; border-radius:3px; font-size:11px; white-space:nowrap; display:none; z-index:30; }
+    .left-tools button:hover .tip { display:block; }
+    .viewport-wrap { position:relative; flex:1; overflow:hidden; background:#c8ccd0; }
+    #viewport { width:100%; height:100%; display:block; }
+    .viewport-title { position:absolute; top:0; left:0; right:0; background:linear-gradient(#5a8eac,#3a6d8c); color:#fff; text-align:center; padding:5px; font-size:13px; font-weight:600; pointer-events:none; z-index:5; }
+    .hint { position:absolute; top:35px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.82); color:#fff; padding:8px 18px; border-radius:4px; font-size:13px; z-index:6; display:none; max-width:85%; text-align:center; }
+    .hint.show { display:block; }
+    .axes-info { position:absolute; bottom:8px; left:8px; background:rgba(255,255,255,0.9); padding:4px 10px; border-radius:4px; font-size:11px; z-index:5; pointer-events:none; }
+    .coord-readout { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,0.65); color:#fff; padding:4px 10px; border-radius:4px; font-size:12px; font-family:monospace; pointer-events:none; z-index:5; }
+    .bottom { height:220px; background:#fff; border-top:1px solid var(--border); display:flex; flex-direction:column; }
+    .bottom-tabs { display:flex; background:#e0e4e8; border-bottom:1px solid var(--border); }
+    .bottom-tabs button { padding:6px 14px; border:none; background:transparent; cursor:pointer; font-size:12px; border-right:1px solid #ccc; }
+    .bottom-tabs button.active { background:#fff; font-weight:700; border-bottom:2px solid var(--accent); }
+    .table-wrap { flex:1; overflow:auto; }
+    table.data { width:100%; border-collapse:collapse; font-size:12px; }
+    table.data th { background:var(--table-h); padding:4px 8px; text-align:left; border-bottom:1px solid #aaa; position:sticky; top:0; z-index:2; }
+    table.data td { padding:2px 5px; border-bottom:1px solid #e8e8e8; border-right:1px solid #eee; }
+    table.data tr:hover td { background:#f0f4f8; }
+    table.data tr.selected td { background:var(--selected); }
+    table.data input { width:100%; border:1px solid transparent; background:transparent; padding:2px 4px; font-size:12px; }
+    .results-panel { display:none; padding:10px; overflow:auto; height:100%; }
+    .results-panel.active { display:block; }
+    .results-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .results-box { background:#f6f6f6; border:1px solid #ccc; border-radius:4px; padding:8px; }
+    .results-box h4 { margin-bottom:6px; color:var(--accent); font-size:13px; }
+    .results-box pre { font-family:Consolas, monospace; font-size:11px; white-space:pre-wrap; }
+    .toast { position:fixed; bottom:24px; right:24px; background:#222; color:#fff; padding:10px 18px; border-radius:4px; z-index:200; opacity:0; transition:opacity .25s; pointer-events:none; }
+    .toast.show { opacity:1; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:center; justify-content:center; z-index:100; }
+    .modal-overlay.show { display:flex; }
+    .modal { background:#fff; border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.3); min-width:380px; max-width:95vw; }
+    .modal-header { background:var(--header); color:#fff; padding:10px 16px; font-weight:700; border-radius:6px 6px 0 0; }
+    .modal-body { padding:16px; }
+    .modal-footer { padding:10px 16px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:8px; }
+    .modal-footer button { padding:6px 16px; border:1px solid #aaa; border-radius:3px; background:#f0f0f0; cursor:pointer; }
+    .modal-footer button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .form-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+    .form-row label { width:110px; text-align:right; font-size:12px; }
+    .form-row input, .form-row select { flex:1; padding:5px 8px; border:1px solid #aaa; border-radius:3px; }
+    .label { font-family:Arial,sans-serif; font-size:12px; font-weight:700; background:rgba(255,255,255,0.88); padding:1px 5px; border-radius:3px; border:1px solid #555; pointer-events:none; user-select:none; }
+    .label.node { color:#1a4a8a; border-color:#1a4a8a; }
+    .label.bar { color:#333; border-color:#777; font-size:11px; }
+    .label.load { color:#b71c1c; border-color:#c62828; font-size:12px; font-weight:700; background:rgba(255,235,238,0.95); padding:2px 7px; }
+    .axis-label { font-weight:800; font-size:18px; font-family:Arial,sans-serif; text-shadow:0 0 4px #fff,0 0 6px #fff; }
+  </style>
+</head>
+<body>
+  <div class="top-menu">
+    <div class="mode active" data-mode="geometria" onclick="setMode('geometria')">1. Geometria</div>
+    <div class="mode" data-mode="obciazenia" onclick="setMode('obciazenia')">2. Obciążenia</div>
+    <div class="mode" data-mode="wyniki" onclick="setMode('wyniki')">3. Wyniki</div>
+    <span class="spacer"></span>
+    <button id="btnUndo" onclick="undo()" style="height:28px;padding:0 10px;border:1px solid #bbb;background:#fff;border-radius:3px;cursor:pointer;font-size:14px" disabled>↩</button>
+    <button id="btnRedo" onclick="redo()" style="height:28px;padding:0 10px;border:1px solid #bbb;background:#fff;border-radius:3px;cursor:pointer;font-size:14px" disabled>↪</button>
+    <span class="status" id="statusText">v0.6</span>
+  </div>
+
+  <div class="toolbar" id="toolbar"></div>
+
+  <div class="main">
+    <div class="left-tools" id="leftTools"></div>
+    <div class="viewport-wrap" id="viewportWrap">
+      <div class="viewport-title" id="viewportTitle">Geometria – rysuj pręty i węzły</div>
+      <div class="hint" id="hint"></div>
+      <canvas id="viewport"></canvas>
+      <div class="axes-info" id="axesInfo">
+        <span style="color:#e53935;font-weight:800">X</span> czerwona &nbsp;
+        <span style="color:#43a047;font-weight:800">Y</span> zielona &nbsp;
+        <span style="color:#1e88e5;font-weight:800">Z</span> niebieska = <b>PION ↑</b>
+        &nbsp;|&nbsp; Płaszczyzna: <b id="planeLabel">XY</b>
+      </div>
+      <div class="coord-readout" id="coordReadout">x=0.0  y=0.0  z=0.0</div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="bottom-tabs" id="bottomTabs"></div>
+    <div class="table-wrap" id="tableWrap"></div>
+    <div class="results-panel" id="resultsPanel">
+      <div class="results-grid">
+        <div class="results-box"><h4>Reakcje</h4><pre id="resReactions">—</pre></div>
+        <div class="results-box"><h4>Siły w prętach</h4><pre id="resForces">—</pre></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="sectionModal">
+    <div class="modal">
+      <div class="modal-header">Przekrój / materiał</div>
+      <div class="modal-body">
+        <div class="form-row">
+          <label>Materiał:</label>
+          <select id="matSelect">
+            <option value="S235">Stal S235</option>
+            <option value="S355">Stal S355</option>
+            <option value="C24">Drewno C24</option>
+            <option value="C30">Drewno C30</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Przekrój:</label>
+          <select id="secSelect"></select>
+        </div>
+        <div class="form-row">
+          <label>Zastosuj do:</label>
+          <select id="secTarget">
+            <option value="all">Wszystkich</option>
+            <option value="selected">Zaznaczonego</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeModal()">Anuluj</button>
+        <button class="primary" onclick="applySection()">Zastosuj</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="loadModal">
+    <div class="modal">
+      <div class="modal-header" id="loadModalTitle">Obciążenie</div>
+      <div class="modal-body">
+        <p id="loadModalHint" style="font-size:12px;color:#555;margin-bottom:10px"></p>
+        <div class="form-row"><label id="loadLabX">Fx [kN]:</label><input type="number" id="loadX" step="any" value="0"></div>
+        <div class="form-row"><label id="loadLabY">Fy [kN]:</label><input type="number" id="loadY" step="any" value="0"></div>
+        <div class="form-row"><label id="loadLabZ">Fz [kN] (↓ ujemny):</label><input type="number" id="loadZ" step="any" value="-10"></div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeLoadModal()">Anuluj</button>
+        <button class="primary" onclick="applyLoadModal()">Dodaj</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+  <script>
+    const MATERIALS = {
+      S235:{E:210e6,G:81e6},
+      S355:{E:210e6,G:81e6},
+      C24:{E:11e6,G:0.69e6},
+      C30:{E:12e6,G:0.75e6}
+    };
+    const SECTIONS = {
+      'IPE 160':{A:20.1,Iy:869,Iz:68.3,J:3.6},
+      'IPE 200':{A:28.5,Iy:1943,Iz:142.4,J:7.0},
+      'IPE 240':{A:39.1,Iy:3892,Iz:283.6,J:12.9},
+      'IPE 300':{A:53.8,Iy:8356,Iz:603.8,J:20.1},
+      'HEA 200':{A:53.8,Iy:3692,Iz:1336,J:21.0},
+      'Drewno 10x14':{A:140,Iy:2287,Iz:1167,J:140},
+      'Drewno 12x16':{A:192,Iy:4096,Iz:2304,J:250},
+      'Drewno 14x18':{A:252,Iy:6804,Iz:4116,J:400}
+    };
+
+    let nodes = [];
+    let bars = [];
+    let supports = [];
+    let loads = [];
+    let selected = { type:null, id:null };
+    let mode = 'geometria';
+    let tool = null;
+    let undoStack = [];
+    let redoStack = [];
+    let nextN = 1, nextB = 1, nextS = 1, nextL = 1;
+    let gridSnap = 0.5;
+    let workPlane = 'xy';
+    let barStep = 0, barP1 = null, barN1 = null;
+    let previewLine = null;
+    let snapCursor = null;
+    let axisLabelsG = null;
+    let results = null;
+    let scene, camera, renderer, labelRenderer, controls, raycaster, mouse;
+    let nodeM = {}, barM = {}, supM = {}, diagG = null, loadG = null, labelG = null;
+    let gridH, axesH, clickPlane;
+
+    const HISTORY_MAX = 80;
+
+    function init() {
+      const canvas = document.getElementById('viewport');
+      const wrap = document.getElementById('viewportWrap');
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xc8ccd0);
+      camera = new THREE.PerspectiveCamera(50, wrap.clientWidth / wrap.clientHeight, 0.05, 2000);
+      camera.up.set(0,0,1);
+      camera.position.set(10,8,6);
+      camera.lookAt(0,0,1.5);
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+
+      labelRenderer = new THREE.CSS2DRenderer();
+      labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
+      labelRenderer.domElement.style.position = 'absolute';
+      labelRenderer.domElement.style.top = '0';
+      labelRenderer.domElement.style.pointerEvents = 'none';
+      wrap.appendChild(labelRenderer.domElement);
+
+      controls = new THREE.OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0,0,1.5);
+
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambient);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(5,10,7);
+      scene.add(dir);
+
+      gridH = new THREE.GridHelper(20, 40, 0x666666, 0xb0b0b0);
+      scene.add(gridH);
+      axesH = new THREE.AxesHelper(3);
+      scene.add(axesH);
+      addAxisLabels();
+
+      clickPlane = new THREE.Mesh(new THREE.PlaneGeometry(80,80), new THREE.MeshBasicMaterial({ visible:false, side:THREE.DoubleSide }));
+      scene.add(clickPlane);
+      setWorkPlane('xy');
+
+      const prevGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+      previewLine = new THREE.Line(prevGeo, new THREE.LineDashedMaterial({ color:0xff6600, dashSize:0.2, gapSize:0.1 }));
+      previewLine.computeLineDistances();
+      previewLine.visible = false;
+      scene.add(previewLine);
+
+      snapCursor = new THREE.Group();
+      const scMat = new THREE.LineBasicMaterial({ color:0xff6600 });
+      const arm = 0.28;
+      [[-arm,0,0],[arm,0,0],[0,-arm,0],[0,arm,0],[0,0,-arm],[0,0,arm]].forEach((a,i,arr)=>{
+        if(i%2===0) {
+          const g = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(a[0],a[1],a[2]),
+            new THREE.Vector3(arr[i+1][0],arr[i+1][1],arr[i+1][2])
+          ]);
+          snapCursor.add(new THREE.Line(g, scMat));
+        }
+      });
+      snapCursor.add(new THREE.Mesh(new THREE.SphereGeometry(0.07,10,10), new THREE.MeshBasicMaterial({ color:0xff6600, depthTest:false })));
+      const ringPts=[];
+      for(let i=0;i<=24;i++) {
+        const a = i / 24 * Math.PI * 2;
+        ringPts.push(new THREE.Vector3(Math.cos(a)*0.16, Math.sin(a)*0.16, 0));
+      }
+      snapCursor.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), new THREE.LineBasicMaterial({ color:0xffaa00 })));
+      snapCursor.visible = false;
+      scene.add(snapCursor);
+
+      canvas.addEventListener('pointerdown', onClick);
+      canvas.addEventListener('contextmenu', e => e.preventDefault());
+      canvas.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('resize', onResize);
+
+      document.addEventListener('keydown', onKeyDown);
+      setMode('geometria');
+      animate();
+    }
+
+    function onResize() {
+      const wrap = document.getElementById('viewportWrap');
+      camera.aspect = wrap.clientWidth / wrap.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+      labelRenderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        tool = null; barStep = 0; barP1 = null; barN1 = null;
+        if (previewLine) previewLine.visible = false;
+        if (snapCursor) snapCursor.visible = false;
+        updateAxisGuides(null);
+        document.querySelectorAll('.left-tools button').forEach(b => b.classList.remove('active'));
+        updateOrbitMode();
+        showHint('');
+        setStatus('Anulowano komendę (Esc)');
+        toast('Esc – anulowano komendę');
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); redo(); }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+      labelRenderer.render(scene, camera);
+    }
+
+    function setMode(m) {
+      mode = m;
+      tool = null; barStep = 0; barP1 = null; barN1 = null;
+      updateOrbitMode();
+      document.querySelectorAll('.top-menu .mode').forEach(el => {
+        el.classList.toggle('active', el.dataset.mode === m);
+      });
+      const titles = {
+        geometria: 'Geometria – rysuj i edytuj układ',
+        obciazenia: 'Obciążenia – dodawaj siły i obciążenia rozłożone',
+        wyniki: 'Wyniki – diagramy i wartości sił'
+      };
+      document.getElementById('viewportTitle').textContent = titles[m];
+      buildToolbar();
+      buildLeftTools();
+      buildBottomTabs();
+      updateTables();
+      updateViz();
+      showHint('');
+      setStatus(m === 'geometria' ? 'Wybierz komendę z paska' : 'Tryb: ' + m);
+    }
+
+    function buildToolbar() {
+      const tb = document.getElementById('toolbar');
+      let html = `
+        <button onclick="newModel()">Nowy</button>
+        <button onclick="loadBeam()">Belka testowa</button>
+        <button onclick="loadFrame()">Rama</button>
+        <div class="sep"></div>
+        ${mode !== 'wyniki' ? '<button class="calc" onclick="runAnalysis()">▶ Oblicz</button><div class="sep"></div>' : ''}
+        <label>Widok:</label>
+        <button onclick="setView('iso')">ISO</button>
+        <button onclick="setView('xy')">XY</button>
+        <button onclick="setView('xz')">XZ</button>
+        <button onclick="setView('yz')">YZ</button>
+        <div class="sep"></div>
+        <label>Płaszczyzna:</label>
+        <button class="plane-btn" data-plane="xy" onclick="setWorkPlane('xy')">XY</button>
+        <button class="plane-btn" data-plane="xz" onclick="setWorkPlane('xz')">XZ</button>
+        <button class="plane-btn" data-plane="yz" onclick="setWorkPlane('yz')">YZ</button>
+        <div class="sep"></div>
+        <label>Siatka:</label>
+        <select id="gridSnapSel" onchange="changeGridSnap(this.value)">
+          <option value="0.1">0.1 m</option>
+          <option value="0.25">0.25 m</option>
+          <option value="0.5" selected>0.5 m</option>
+          <option value="1">1 m</option>
+          <option value="2">2 m</option>
+        </select>
+      `;
+      if (mode === 'wyniki') {
+        html += `
+          <div class="sep"></div>
+          <label>Diagram:</label>
+          <select id="diagMode" onchange="updateViz()">
+            <option value="none">Brak</option>
+            <option value="N">Nx</option>
+            <option value="Vy">Vy</option>
+            <option value="Vz">Vz</option>
+            <option value="Mx">Mx</option>
+            <option value="My">My</option>
+            <option value="Mz" selected>Mz</option>
+          </select>
+          <label>Skala:</label>
+          <input type="number" id="diagScale" value="0.02" step="0.005" style="width:55px" onchange="updateViz()">
+        `;
+      }
+      html += `<div class="sep"></div><label><input type="checkbox" id="showLab" checked onchange="updateViz()"> Numery</label><label><input type="checkbox" id="showLd" checked onchange="updateViz()"> Obc.</label>`;
+      tb.innerHTML = html;
+      document.querySelectorAll('.plane-btn').forEach(b => b.classList.toggle('active', b.dataset.plane === workPlane));
+    }
+
+    function buildLeftTools() {
+      const lt = document.getElementById('leftTools');
+      let html = '';
+      if (mode === 'geometria') {
+        html += btn('node', '＋', 'Dodaj węzeł');
+        html += btn('bar', '／', 'Rysuj pręt');
+        html += btn('barN', '↔', 'Pręt pomiędzy węzłami');
+        html += '<div class="sep"></div>';
+        html += btn('fixed', '⬛', 'Utwierdzenie');
+        html += btn('pin', '▲', 'Przegub');
+        html += btn('roller', '○▲', 'Łyżwa');
+        html += btn('spring', '∿', 'Sprężyna');
+        html += '<div class="sep"></div>';
+        html += btn('section', '▣', 'Przekrój / materiał', false);
+        html += btn('del', '🗑', 'Usuń zaznaczone', false);
+      } else if (mode === 'obciazenia') {
+        html += btn('loadN', '↓', 'Obciążenie węzłowe');
+        html += btn('loadB', '≡', 'Obciążenie na pręcie');
+        html += '<div class="sep"></div>';
+        html += btn('del', '🗑', 'Usuń zaznaczone', false);
+      } else {
+        html += '<div style="padding:8px;font-size:11px;color:#666;text-align:center">Tryb wyników<br>tylko podgląd</div>';
+      }
+      lt.innerHTML = html;
+      if (tool) {
+        const el = document.getElementById('t-' + tool);
+        if (el) el.classList.add('active');
+      }
+    }
+
+    function btn(id, icon, tip, isTool = true) {
+      const action = isTool ? `onclick="setTool('${id}')"` : `onclick="doAction('${id}')"`;
+      return `<button id="t-${id}" ${action}>${icon}<span class="tip">${tip}</span></button>`;
+    }
+
+    function buildBottomTabs() {
+      const bt = document.getElementById('bottomTabs');
+      let tabs = [];
+      if (mode === 'geometria') tabs = [['nodes','Węzły'],['bars','Pręty'],['supports','Podpory'],['sections','Przekroje']];
+      else if (mode === 'obciazenia') tabs = [['loads','Obciążenia']];
+      else tabs = [['results','Wyniki']];
+      bt.innerHTML = tabs.map(([id, name], i) => `<button class="${i===0?'active':''}" data-t="${id}" onclick="switchTab('${id}')">${name}</button>`).join('');
+    }
+
+    function switchTab(id) {
+      document.querySelectorAll('.bottom-tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === id));
+      updateTables();
+    }
+
+    function updateOrbitMode() {
+      if (!controls) return;
+      controls.enabled = true;
+      if (tool) {
+        controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+      } else {
+        controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+      }
+    }
+
+    function setTool(t) {
+      tool = t; barStep = 0; barP1 = null; barN1 = null;
+      document.querySelectorAll('.left-tools button').forEach(b => b.classList.remove('active'));
+      const el = document.getElementById('t-' + t);
+      if (el) el.classList.add('active');
+      updateOrbitMode();
+      const hints = {
+        node: 'Kliknij na siatce → nowy węzeł',
+        bar: 'Kliknij start, potem koniec pręta. Prawy przycisk = koniec rysowania.',
+        barN: 'Kliknij dwa istniejące węzły',
+        pin: 'Kliknij węzeł → przegub',
+        fixed: 'Kliknij węzeł → utwierdzenie',
+        roller: 'Kliknij węzeł → łyżwa',
+        spring: 'Kliknij węzeł → sprężyna',
+        loadN: 'Kliknij węzeł → dodaj nodal load',
+        loadB: 'Kliknij pręt → dodaj obciążenie rozłożone'
+      };
+      showHint(hints[t] || '');
+      setStatus('Narzędzie: ' + t);
+    }
+
+    function doAction(a) {
+      if (a === 'section') openSectionModal();
+      if (a === 'del') deleteSelected();
+    }
+
+    function toast(msg, ms = 2200) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), ms);
+    }
+
+    function setStatus(t) {
+      document.getElementById('statusText').textContent = t;
+    }
+
+    function showHint(t) {
+      const el = document.getElementById('hint');
+      if (t) { el.textContent = t; el.classList.add('show'); } else { el.classList.remove('show'); }
+    }
+
+    function addAxisLabels() {
+      if (axisLabelsG) scene.remove(axisLabelsG);
+      axisLabelsG = new THREE.Group();
+      const make = (txt, color, pos) => {
+        const d = document.createElement('div');
+        d.className = 'axis-label'; d.style.color = color; d.textContent = txt;
+        const obj = new THREE.CSS2DObject(d); obj.position.copy(pos); return obj;
+      };
+      axisLabelsG.add(make('X','#e53935', new THREE.Vector3(3.5,0,0.05)));
+      axisLabelsG.add(make('Y','#43a047', new THREE.Vector3(0,3.5,0.05)));
+      axisLabelsG.add(make('Z','#1e88e5', new THREE.Vector3(0.1,0.1,3.5)));
+      scene.add(axisLabelsG);
+    }
+
+    function setWorkPlane(plane) {
+      workPlane = plane;
+      if (gridH) scene.remove(gridH);
+      const size = 20;
+      const divisions = Math.max(4, Math.round(size / gridSnap));
+      gridH = new THREE.GridHelper(size, divisions, 0x444444, 0xb0b0b0);
+      if (plane === 'xy') gridH.rotation.x = Math.PI/2;
+      else if (plane === 'xz') gridH.rotation.set(0,0,0);
+      else if (plane === 'yz') gridH.rotation.z = Math.PI/2;
+      scene.add(gridH);
+
+      clickPlane.rotation.set(0,0,0);
+      clickPlane.position.set(0,0,0);
+      if (plane === 'xz') clickPlane.rotation.x = Math.PI / 2;
+      if (plane === 'yz') clickPlane.rotation.y = Math.PI / 2;
+
+      const labels = {
+        xy: 'XY',
+        xz: 'XZ',
+        yz: 'YZ'
+      };
+      document.getElementById('planeLabel').textContent = labels[plane] || plane;
+      document.querySelectorAll('.plane-btn').forEach(b => b.classList.toggle('active', b.dataset.plane === plane));
+      setStatus('Siatka 3D: ' + gridSnap + ' m');
+    }
+
+    function changeGridSnap(v) {
+      gridSnap = parseFloat(v) || 0.5;
+      setWorkPlane(workPlane);
+      toast('Siatka: ' + gridSnap + ' m');
+    }
+
+    function setView(v) {
+      const t = controls.target;
+      if (v === 'iso') camera.position.set(t.x + 10, t.y + 8, t.z + 6);
+      else if (v === 'xy') camera.position.set(t.x, t.y, t.z + 18);
+      else if (v === 'xz') camera.position.set(t.x, t.y - 18, t.z + 0.5);
+      else if (v === 'yz') camera.position.set(t.x + 18, t.y, t.z + 0.5);
+      controls.update();
+    }
+
+    function snapCoord(v) { const s = gridSnap || 0.5; return Math.round(v / s) * s; }
+
+    function findNear(p, tol = 0.3) {
+      let best = null, bestD = tol;
+      nodes.forEach(n => {
+        const d = Math.hypot(n.x - p.x, n.y - p.y, n.z - p.z);
+        if (d < bestD) { best = n; bestD = d; }
+      });
+      return best;
+    }
+
+    function findNearScreen(clientX, clientY, pxTol = 30) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      let best = null, bestD = pxTol;
+      nodes.forEach(n => {
+        const v = new THREE.Vector3(n.x, n.y, n.z).project(camera);
+        if (v.z > 1 || v.z < -1) return;
+        const sx = (v.x * 0.5 + 0.5) * rect.width + rect.left;
+        const sy = (-v.y * 0.5 + 0.5) * rect.height + rect.top;
+        const d = Math.hypot(sx - clientX, sy - clientY);
+        if (d < bestD) { best = n; bestD = d; }
+      });
+      return best;
+    }
+
+    function getClickPoint3D(refPoint) {
+      raycaster.setFromCamera(mouse, camera);
+      const ref = refPoint ? refPoint.clone() : new THREE.Vector3(0,0,0);
+      let plane;
+      if (refPoint && tool === 'bar' && barStep === 1) {
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        plane = new THREE.Plane().setFromNormalAndCoplanarPoint(dir, ref);
+      } else {
+        plane = new THREE.Plane(new THREE.Vector3(0,0,1), -ref.z);
+      }
+      const target = new THREE.Vector3();
+      if (!raycaster.ray.intersectPlane(plane, target)) {
+        const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+        const p = new THREE.Plane().setFromNormalAndCoplanarPoint(dir, ref);
+        if (!raycaster.ray.intersectPlane(p, target)) return null;
+      }
+      target.x = snapCoord(target.x);
+      target.y = snapCoord(target.y);
+      target.z = snapCoord(target.z);
+      return target;
+    }
+
+    function applyAxisSnap(p0, p1) {
+      const dx = Math.abs(p1.x - p0.x);
+      const dy = Math.abs(p1.y - p0.y);
+      const dz = Math.abs(p1.z - p0.z);
+      if (dz >= dx && dz >= dy) return new THREE.Vector3(p0.x, p0.y, p1.z);
+      if (dx >= dy && dx >= dz) return new THREE.Vector3(p1.x, p0.y, p0.z);
+      return new THREE.Vector3(p0.x, p1.y, p0.z);
+    }
+
+    function getClickPoint() {
+      if (tool === 'bar' && barStep === 1 && barP1) {
+        let p = getClickPoint3D(barP1);
+        if (!p) return null;
+        p = applyAxisSnap(barP1, p);
+        p.x = snapCoord(p.x); p.y = snapCoord(p.y); p.z = snapCoord(p.z);
+        return p;
+      }
+      return getClickPoint3D(null);
+    }
+
+    function onPointerMove(e) {
+      if (!renderer) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      let p = null;
+      let snapNode = null;
+      if (tool === 'bar' || tool === 'node') snapNode = findNearScreen(e.clientX, e.clientY, 30);
+      if (snapNode) p = new THREE.Vector3(snapNode.x, snapNode.y, snapNode.z);
+      else p = getClickPoint();
+      if (!p) return;
+
+      const rd = document.getElementById('coordReadout');
+      if (rd) {
+        let extra = '';
+        if (snapNode) extra = '  → węzeł ' + snapNode.id;
+        else if (tool === 'bar' && barStep === 1 && barP1) {
+          const dx = p.x - barP1.x, dy = p.y - barP1.y, dz = p.z - barP1.z;
+          if (Math.abs(dz) > 1e-6 && Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) extra = '  → oś Z';
+          else if (Math.abs(dx) > 1e-6 && Math.abs(dy) < 1e-6 && Math.abs(dz) < 1e-6) extra = '  → oś X';
+          else if (Math.abs(dy) > 1e-6 && Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) extra = '  → oś Y';
+        }
+        rd.textContent = `x=${p.x.toFixed(1)}  y=${p.y.toFixed(1)}  z=${p.z.toFixed(1)}` + extra;
+      }
+
+      if (snapCursor) {
+        if ((tool === 'bar' || tool === 'node') && p) {
+          snapCursor.position.copy(p);
+          snapCursor.visible = true;
+          snapCursor.children.forEach(ch => {
+            if (ch.material && ch.material.color) ch.material.color.setHex(snapNode ? 0x1565c0 : 0xff6600);
+          });
+        } else {
+          snapCursor.visible = false;
+        }
+      }
+
+      if (tool === 'bar' && barStep === 1 && barP1 && previewLine) {
+        const pos = previewLine.geometry.attributes.position;
+        pos.setXYZ(0, barP1.x, barP1.y, barP1.z);
+        pos.setXYZ(1, p.x, p.y, p.z);
+        pos.needsUpdate = true;
+        previewLine.computeLineDistances();
+        previewLine.visible = true;
+      } else if (previewLine) {
+        previewLine.visible = false;
+      }
+
+      updateAxisGuides(barStep === 1 && barP1 ? barP1 : null);
+    }
+
+    let axisGuidesG = null;
+    function updateAxisGuides(origin) {
+      if (axisGuidesG) { scene.remove(axisGuidesG); axisGuidesG = null; }
+      if (!origin) return;
+      axisGuidesG = new THREE.Group();
+      const L = 12;
+      const mk = (a, b, col) => {
+        const g = new THREE.BufferGeometry().setFromPoints([a,b]);
+        axisGuidesG.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color:col, transparent:true, opacity:0.45 })));
+      };
+      const o = origin;
+      mk(new THREE.Vector3(o.x-L,o.y,o.z), new THREE.Vector3(o.x+L,o.y,o.z), 0xe53935);
+      mk(new THREE.Vector3(o.x,o.y-L,o.z), new THREE.Vector3(o.x,o.y+L,o.z), 0x43a047);
+      mk(new THREE.Vector3(o.x,o.y,o.z-L), new THREE.Vector3(o.x,o.y,o.z+L), 0x1e88e5);
+      scene.add(axisGuidesG);
+    }
+
+    function snapshot() {
+      return JSON.stringify({ nodes, bars, supports, loads, nextN, nextB, nextS, nextL });
+    }
+
+    function restoreSnap(s) {
+      const d = JSON.parse(s);
+      nodes = d.nodes; bars = d.bars; supports = d.supports; loads = d.loads;
+      nextN = d.nextN; nextB = d.nextB; nextS = d.nextS; nextL = d.nextL;
+      selected = { type:null, id:null };
+      results = null;
+      barStep = 0; barP1 = null; barN1 = null;
+      updateAll();
+    }
+
+    function pushHistory() {
+      undoStack.push(snapshot());
+      if (undoStack.length > HISTORY_MAX) undoStack.shift();
+      redoStack = [];
+      updateUndoButtons();
+    }
+
+    function undo() {
+      if (!undoStack.length) { toast('Brak cofnięcia'); return; }
+      redoStack.push(snapshot());
+      restoreSnap(undoStack.pop());
+      updateUndoButtons();
+      toast('↩ Cofnięto');
+    }
+
+    function redo() {
+      if (!redoStack.length) { toast('Brak ponowienia'); return; }
+      undoStack.push(snapshot());
+      restoreSnap(redoStack.pop());
+      updateUndoButtons();
+      toast('↪ Ponowiono');
+    }
+
+    function updateUndoButtons() {
+      const u = document.getElementById('btnUndo');
+      const r = document.getElementById('btnRedo');
+      if (u) u.disabled = !undoStack.length;
+      if (r) r.disabled = !redoStack.length;
+    }
+
+    function newModel() {
+      nodes = []; bars = []; supports = []; loads = []; results = null;
+      nextN = nextB = nextS = nextL = 1; selected = { type:null, id:null };
+      undoStack = []; redoStack = []; updateUndoButtons();
+      updateAll(); toast('Nowy model');
+    }
+
+    function addNode(x, y, z) {
+      pushHistory();
+      const n = { id: nextN++, x: +x, y: +y, z: +z };
+      nodes.push(n);
+      updateAll();
+      return n;
+    }
+
+    function addBar(n1, n2) {
+      if (n1 === n2) return null;
+      if (bars.some(b => (b.n1 === n1 && b.n2 === n2) || (b.n1 === n2 && b.n2 === n1))) { toast('Pręt już istnieje'); return null; }
+      pushHistory();
+      const b = { id: nextB++, n1, n2 };
+      Object.assign(b, secStiff('IPE 200','S235'));
+      bars.push(b);
+      updateAll();
+      return b;
+    }
+
+    function secStiff(section, material) {
+      const s = SECTIONS[section] || SECTIONS['IPE 200'];
+      const m = MATERIALS[material] || MATERIALS.S235;
+      return {
+        EA: m.E * s.A * 1e-4,
+        EIy: m.E * s.Iy * 1e-8,
+        EIz: m.E * s.Iz * 1e-8,
+        GJ: m.G * s.J * 1e-8,
+        section, material,
+        Iy: s.Iy,
+        Iz: s.Iz
+      };
+    }
+
+    function addSupport(nid, type) {
+      const s = { id: nextS++, node: nid, type };
+      if (type === 'fixed') { s.ux=1; s.uy=1; s.uz=1; s.rx=1; s.ry=1; s.rz=1; }
+      else if (type === 'pin') { s.ux=1; s.uy=1; s.uz=1; s.rx=1; s.ry=0; s.rz=0; }
+      else if (type === 'roller') { s.ux=0; s.uy=1; s.uz=1; s.rx=0; s.ry=0; s.rz=0; }
+      else if (type === 'spring') { s.kz = 1000; s.kx = 0; s.ky = 0; s.ux=0; s.uy=0; s.uz=0; s.rx=0; s.ry=0; s.rz=0; }
+      else { s.ux=0; s.uy=1; s.uz=1; s.rx=0; s.ry=0; s.rz=0; }
+      pushHistory();
+      supports = supports.filter(x => x.node !== nid);
+      supports.push(s);
+      updateAll();
+    }
+
+    function deleteSelected() {
+      if (!selected.type) return;
+      pushHistory();
+      if (selected.type === 'node') {
+        nodes = nodes.filter(n => n.id !== selected.id);
+        bars = bars.filter(b => b.n1 !== selected.id && b.n2 !== selected.id);
+        supports = supports.filter(s => s.node !== selected.id);
+        loads = loads.filter(l => !(l.type === 'node' && l.target === selected.id));
+      } else if (selected.type === 'bar') {
+        bars = bars.filter(b => b.id !== selected.id);
+        loads = loads.filter(l => !(l.type === 'bar' && l.target === selected.id));
+      } else if (selected.type === 'load') {
+        loads = loads.filter(l => l.id !== selected.id);
+      }
+      selected = { type:null, id:null };
+      updateAll();
+    }
+
+    function select(type, id) {
+      selected = { type, id };
+      updateViz();
+      updateTables();
+    }
+
+    function onClick(e) {
+      if (tool) e.stopPropagation();
+      if (e.button !== 0) {
+        if (barStep === 1) {
+          barStep = 0; barP1 = null; barN1 = null;
+          if (previewLine) previewLine.visible = false;
+          if (snapCursor) snapCursor.visible = false;
+          updateAxisGuides(null);
+          showHint(getHint());
+          toast('Koniec rysowania łańcucha');
+        }
+        return;
+      }
+      if (mode === 'wyniki') return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const nHits = raycaster.intersectObjects(Object.values(nodeM), true);
+      const bHits = raycaster.intersectObjects(Object.values(barM), true);
+
+      if (mode === 'geometria') {
+        if (tool === 'pin' || tool === 'fixed' || tool === 'roller' || tool === 'spring') {
+          if (nHits.length) {
+            addSupport(nHits[0].object.userData.id, tool);
+            const names = { pin:'przegub', fixed:'utwierdzenie', roller:'łyżwa', spring:'sprężyna' };
+            toast('Podpora: ' + (names[tool] || tool));
+          } else toast('Kliknij w węzeł');
+          return;
+        }
+
+        if (tool === 'barN') {
+          if (nHits.length) {
+            const id = nHits[0].object.userData.id;
+            if (!barN1) {
+              barN1 = id; highlight(id, true); showHint('Kliknij drugi węzeł');
+            } else {
+              if (barN1 !== id) addBar(barN1, id);
+              highlight(barN1, false); barN1 = null; showHint(getHint());
+            }
+          }
+          return;
+        }
+
+        if (tool === 'node' || tool === 'bar') {
+          const p = getClickPoint();
+          if (!p) { toast('Klik poza płaszczyzną'); return; }
+
+          if (tool === 'node') {
+            const near = findNear(p, 0.25);
+            if (near) select('node', near.id);
+            else addNode(p.x, p.y, p.z);
+            return;
+          }
+
+          const nearNode = findNearScreen(e.clientX, e.clientY, 30);
+          if (barStep === 0) {
+            if (nearNode) {
+              barP1 = new THREE.Vector3(nearNode.x, nearNode.y, nearNode.z);
+              barN1 = nearNode.id;
+            } else {
+              barP1 = p.clone();
+              barN1 = null;
+            }
+            barStep = 1;
+            showHint('Kliknij koniec pręta. Prawy przycisk = kończysz');
+          } else {
+            let n1, n2;
+            if (barN1) n1 = nodes.find(n => n.id === barN1);
+            else n1 = findNear(barP1) || addNode(barP1.x, barP1.y, barP1.z);
+
+            if (nearNode) n2 = nearNode;
+            else n2 = findNear(p) || addNode(p.x, p.y, p.z);
+
+            if (n1 && n2 && n1.id !== n2.id) {
+              addBar(n1.id, n2.id);
+              barP1 = new THREE.Vector3(n2.x, n2.y, n2.z);
+              barN1 = n2.id;
+              barStep = 1;
+              showHint('Kontynuuj od węzła ' + n2.id + ' (Prawy przycisk = stop)');
+            } else toast('Ten sam węzeł – pominięto');
+          }
+        }
+      }
+
+      if (mode === 'obciazenia') {
+        if (tool === 'loadN') {
+          if (nHits.length) openLoadModal('node', nHits[0].object.userData.id);
+          else toast('Kliknij węzeł');
+        }
+        if (tool === 'loadB') {
+          if (bHits.length) openLoadModal('bar', bHits[0].object.userData.id);
+          else toast('Kliknij pręt');
+        }
+      }
+    }
+
+    function highlight(id, on) {
+      const m = nodeM[id];
+      if (m) m.material.color.setHex(on ? 0xff6600 : 0x2266cc);
+    }
+
+    function getHint() {
+      return tool ? document.querySelector('#t-' + tool + ' .tip')?.textContent || '' : '';
+    }
+
+    function evaluateElementForces(elem) {
+      const n1 = nodes.find(n => n.id === elem.n1);
+      const n2 = nodes.find(n => n.id === elem.n2);
+      if (!n1 || !n2) return null;
+      const { T, L } = beamTransform(n1, n2);
+      const K = localBeamMatrix(L, elem.EA, elem.EIy, elem.EIz, elem.GJ);
+      const kG = transformMatrix(K, T);
+      const dofs = [0,1,2,3,4,5, 6,7,8,9,10,11];
+      // element node global indices in 6dof per node
+      const idx1 = nodes.findIndex(n => n.id === elem.n1) * 6;
+      const idx2 = nodes.findIndex(n => n.id === elem.n2) * 6;
+      const uG = [];
+      for (let i = 0; i < 6; i++) uG.push(results.U[idx1 + i]);
+      for (let i = 0; i < 6; i++) uG.push(results.U[idx2 + i]);
+      const uL = applyTransform(T, uG);
+      const fe = applyMatrix(K, uL);
+      const load = loads.find(l => l.type === 'bar' && l.target === elem.id);
+      let ql = [0,0,0];
+      if (load) {
+        const qg = [load.qx || 0, load.qy || 0, load.qz || 0];
+        ql = matVec(transpose(T), qg);
+      }
+      const fLoad = distributedLoadVector(L, ql[0], ql[1], ql[2]);
+      const fLocal = subVec(fe, fLoad);
+      return { local: fLocal, global: fe, qLocal: ql, L, n1, n2 };
+    }
+
+    function updateViz() {
+      clearViz();
+      const showL = document.getElementById('showLab')?.checked !== false;
+      const showD = document.getElementById('showLd')?.checked !== false;
+      const dMode = document.getElementById('diagMode')?.value || 'none';
+      const dScale = parseFloat(document.getElementById('diagScale')?.value) || 0.02;
+
+      labelG = new THREE.Group(); scene.add(labelG);
+      diagG = new THREE.Group(); scene.add(diagG);
+      loadG = new THREE.Group(); scene.add(loadG);
+
+      nodes.forEach(n => {
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.11,12,12), new THREE.MeshPhongMaterial({ color: selected.type === 'node' && selected.id === n.id ? 0xffaa00 : 0x2266cc }));
+        mesh.position.set(n.x, n.y, n.z);
+        mesh.userData = { type:'node', id:n.id };
+        scene.add(mesh); nodeM[n.id] = mesh;
+        if (showL) {
+          const lab = mkLabel(String(n.id), 'node');
+          lab.position.set(n.x, n.y + 0.25, n.z);
+          labelG.add(lab);
+        }
+      });
+
+      bars.forEach(bar => {
+        const n1 = nodes.find(n => n.id === bar.n1);
+        const n2 = nodes.find(n => n.id === bar.n2);
+        if (!n1 || !n2) return;
+        const p1 = new THREE.Vector3(n1.x, n1.y, n1.z);
+        const p2 = new THREE.Vector3(n2.x, n2.y, n2.z);
+        const dir = new THREE.Vector3().subVectors(p2, p1);
+        const len = dir.length();
+        if (len < 1e-6) return;
+        dir.normalize();
+        const geo = new THREE.CylinderGeometry(0.05, 0.05, len, 8);
+        geo.translate(0, len / 2, 0);
+        geo.rotateX(Math.PI / 2);
+        const mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({ color: selected.type === 'bar' && selected.id === bar.id ? 0xffaa00 : 0x555 }));
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), dir);
+        mesh.position.copy(p1);
+        mesh.userData = { type:'bar', id:bar.id };
+        scene.add(mesh); barM[bar.id] = mesh;
+
+        if (showL) {
+          const mid = new THREE.Vector3().lerpVectors(p1, p2, 0.5);
+          const lab = mkLabel('P' + bar.id, 'bar');
+          lab.position.set(mid.x, mid.y + 0.2, mid.z);
+          labelG.add(lab);
+        }
+
+        if (results && mode === 'wyniki' && dMode !== 'none') drawDiagram(bar, dMode, dScale);
+      });
+
+      supports.forEach(s => {
+        const n = nodes.find(nd => nd.id === s.node); if (!n) return;
+        const g = new THREE.Group(); g.position.set(n.x, n.y, n.z);
+        const t = s.type || 'roller';
+        if (t === 'fixed') {
+          const box = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.32,0.22), new THREE.MeshPhongMaterial({ color:0xb71c1c }));
+          box.position.z = -0.11; g.add(box);
+          const mat = new THREE.LineBasicMaterial({ color:0x5d0000 });
+          for (let i = -2; i <= 2; i++) {
+            const a = new THREE.Vector3(-0.18 + i * 0.08, -0.18, -0.24);
+            const b = new THREE.Vector3(-0.10 + i * 0.08, 0.18, -0.24);
+            g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]), mat));
+          }
+        } else if (t === 'pin') {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.18,0.36,3), new THREE.MeshPhongMaterial({ color:0x2e7d32 }));
+          cone.rotation.x = Math.PI / 2; cone.position.z = -0.18; g.add(cone);
+          const base = new THREE.Mesh(new THREE.BoxGeometry(0.40,0.08,0.04), new THREE.MeshPhongMaterial({ color:0x1b5e20 }));
+          base.position.z = -0.38; g.add(base);
+        } else if (t === 'roller') {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16,0.30,3), new THREE.MeshPhongMaterial({ color:0x1565c0 }));
+          cone.rotation.x = Math.PI / 2; cone.position.z = -0.15; g.add(cone);
+          for (const dx of [-0.10, 0.10]) {
+            const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.10,12), new THREE.MeshPhongMaterial({ color:0x0d47a1 }));
+            roll.rotation.x = Math.PI / 2; roll.position.set(dx, 0, -0.34); g.add(roll);
+          }
+          const ground = new THREE.Mesh(new THREE.BoxGeometry(0.45,0.06,0.03), new THREE.MeshPhongMaterial({ color:0x0d47a1 }));
+          ground.position.z = -0.42; g.add(ground);
+        } else if (t === 'spring') {
+          const pts = [];
+          const turns = 5, h = 0.55, amp = 0.10;
+          for (let i = 0; i <= turns * 4; i++) {
+            const t = i / (turns * 4);
+            const z = -t * h;
+            const x = Math.sin(t * turns * 2 * Math.PI) * amp;
+            const y = Math.cos(t * turns * 2 * Math.PI) * amp * 0.3;
+            pts.push(new THREE.Vector3(x, y, z));
+          }
+          g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color:0x6a1b9a, linewidth:2 })));
+          const foot = new THREE.Mesh(new THREE.BoxGeometry(0.28,0.28,0.05), new THREE.MeshPhongMaterial({ color:0x4a148c }));
+          foot.position.z = -h; g.add(foot);
+        }
+        scene.add(g); supM[s.id] = g;
+      });
+
+      if (showD) {
+        loads.forEach(ld => {
+          if (ld.type === 'node') drawNodalLoad(ld);
+          else if (ld.type === 'bar') drawBarLoad(ld);
+        });
+      }
+    }
+
+    function clearViz() {
+      Object.values(nodeM).forEach(m => scene.remove(m));
+      Object.values(barM).forEach(m => scene.remove(m));
+      Object.values(supM).forEach(m => scene.remove(m));
+      if (diagG) scene.remove(diagG);
+      if (loadG) scene.remove(loadG);
+      if (labelG) scene.remove(labelG);
+      labelRenderer.domElement.querySelectorAll('.label').forEach(e => e.remove());
+      nodeM = {}; barM = {}; supM = {}; diagG = null; loadG = null; labelG = null;
+    }
+
+    function mkLabel(txt, cls) {
+      const d = document.createElement('div');
+      d.className = 'label ' + (cls || '');
+      d.textContent = txt;
+      const obj = new THREE.CSS2DObject(d);
+      obj.userData = { type:'label' };
+      return obj;
+    }
+
+    function drawNodalLoad(ld) {
+      const n = nodes.find(nd => nd.id === ld.target); if (!n) return;
+      const fx = ld.fx || 0, fy = ld.fy || 0, fz = ld.fz || 0;
+      const mag = Math.hypot(fx, fy, fz); if (mag < 1e-9) return;
+      const dir = new THREE.Vector3(fx, fy, fz).normalize();
+      const arrowLen = 0.7 + Math.min(mag / 20, 1.2);
+      const origin = new THREE.Vector3(n.x, n.y, n.z).addScaledVector(dir, -arrowLen * 0.15);
+      const ah = new THREE.ArrowHelper(dir, origin, arrowLen, 0xd32f2f, 0.28, 0.16);
+      ah.line.material = new THREE.LineBasicMaterial({ color:0xd32f2f, linewidth:2 });
+      loadG.add(ah);
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08,10,10), new THREE.MeshPhongMaterial({ color:0xd32f2f }));
+      dot.position.set(n.x, n.y, n.z); loadG.add(dot);
+      const parts = [];
+      if (Math.abs(fx) > 1e-6) parts.push('Fx=' + fx);
+      if (Math.abs(fy) > 1e-6) parts.push('Fy=' + fy);
+      if (Math.abs(fz) > 1e-6) parts.push('Fz=' + fz);
+      const lab = mkLabel(parts.join(' ') + ' kN', 'load');
+      lab.position.copy(origin).addScaledVector(dir, arrowLen * 0.55).add(new THREE.Vector3(0.15, 0.15, 0.15));
+      labelG.add(lab);
+    }
+
+    function drawBarLoad(ld) {
+      const bar = bars.find(b => b.id === ld.target); if (!bar) return;
+      const n1 = nodes.find(n => n.id === bar.n1), n2 = nodes.find(n => n.id === bar.n2);
+      if (!n1 || !n2) return;
+      const p1 = new THREE.Vector3(n1.x, n1.y, n1.z);
+      const p2 = new THREE.Vector3(n2.x, n2.y, n2.z);
+      const axis = new THREE.Vector3().subVectors(p2,p1); const len = axis.length(); if (len < 1e-9) return; axis.normalize();
+      const qx = ld.qx || 0, qy = ld.qy || 0, qz = ld.qz || 0;
+      const qmag = Math.hypot(qx,qy,qz); if (qmag < 1e-9) return;
+      const qdir = new THREE.Vector3(qx,qy,qz).normalize();
+      const side = qdir.clone().negate();
+      const h = 0.5 + Math.min(qmag / 18, 0.85);
+      const nArrows = Math.max(6, Math.min(16, Math.round(len / 0.5)));
+      const isGravity = qdir.z < -0.3;
+      const col = isGravity ? 0xc62828 : 0xef6c00;
+      const colFill = isGravity ? 0xef9a9a : 0xffcc80;
+
+      const basePts = [], tipPts = [];
+      for (let i = 0; i <= nArrows; i++) {
+        const t = i / nArrows;
+        const onBar = new THREE.Vector3().lerpVectors(p1, p2, t);
+        const base = onBar.clone().addScaledVector(side, 0.05);
+        const tip = onBar.clone().addScaledVector(side, 0.05 + h);
+        basePts.push(base); tipPts.push(tip);
+      }
+
+      const fillPos = [];
+      for (let i = 0; i < nArrows; i++) {
+        const a = basePts[i], b = tipPts[i], c = tipPts[i + 1], d = basePts[i + 1];
+        fillPos.push(a.x,a.y,a.z, b.x,b.y,b.z, c.x,c.y,c.z);
+        fillPos.push(a.x,a.y,a.z, c.x,c.y,c.z, d.x,d.y,d.z);
+      }
+      const fillGeo = new THREE.BufferGeometry();
+      fillGeo.setAttribute('position', new THREE.Float32BufferAttribute(fillPos,3));
+      loadG.add(new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color:colFill, transparent:true, opacity:0.5, side:THREE.DoubleSide, depthWrite:false })));
+
+      const lineMat = new THREE.LineBasicMaterial({ color:col });
+      loadG.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(tipPts), lineMat));
+      loadG.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(basePts), lineMat));
+      loadG.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([basePts[0], tipPts[0]]), lineMat));
+      loadG.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([basePts[nArrows], tipPts[nArrows]]), lineMat));
+
+      const headLen = Math.min(0.18, h * 0.3);
+      const headW = Math.min(0.11, h * 0.2);
+      for (let i = 0; i <= nArrows; i++) {
+        const ah = new THREE.ArrowHelper(qdir, tipPts[i], h, col, headLen, headW);
+        loadG.add(ah);
+      }
+
+      const mid = tipPts[Math.floor(nArrows / 2)].clone().addScaledVector(side, 0.25);
+      let qlab = 'q = ' + (Math.abs(qz) > 1e-6 ? qz : (Math.abs(qy) > 1e-6 ? qy : qx)) + ' kN/m';
+      const lab = mkLabel(qlab, 'load');
+      lab.position.copy(mid); labelG.add(lab);
+    }
+
+    function drawDiagram(bar, modeName, scale) {
+      if (!results || !results.barResults) return;
+      const info = results.barResults[bar.id];
+      if (!info) return;
+      const n1 = nodes.find(n => n.id === bar.n1), n2 = nodes.find(n => n.id === bar.n2);
+      if (!n1 || !n2) return;
+      const p1 = new THREE.Vector3(n1.x, n1.y, n1.z);
+      const p2 = new THREE.Vector3(n2.x, n2.y, n2.z);
+      const { R, ex, ey, ez } = beamTransform(n1, n2);
+      const local = info.local;
+      const q = info.qLocal || [0,0,0];
+      let valAt = (t, x) => {
+        const qy = q[1] || 0, qz = q[2] || 0;
+        let value = 0;
+        if (modeName === 'N') value = local.N1 * (1 - t) + local.N2 * t;
+        else if (modeName === 'Vy') value = local.Vy1 - qy * x;
+        else if (modeName === 'Vz') value = local.Vz1 - qz * x;
+        else if (modeName === 'Mx') value = local.Mx1 * (1 - t) + local.Mx2 * t;
+        else if (modeName === 'My') value = local.My1 + local.Vz1 * x - (qz * x * x) / 2;
+        else if (modeName === 'Mz') value = local.Mz1 + local.Vy1 * x - (qy * x * x) / 2;
+        return value;
+      };
+
+      const N = 32;
+      const pts = [];
+      const vals = [];
+      let maxAbs = 0;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const x = t * info.L;
+        const v = valAt(t, x);
+        vals.push(v); maxAbs = Math.max(maxAbs, Math.abs(v));
+      }
+      if (maxAbs < 1e-6) return;
+      const scaleFac = Math.min(scale, 0.35 * info.L / maxAbs);
+      const axisDir = new THREE.Vector3(0,0,0);
+      if (modeName === 'N') axisDir.copy(new THREE.Vector3(ex[0], ex[1], ex[2]));
+      else if (modeName === 'Vy') axisDir.copy(new THREE.Vector3(ey[0], ey[1], ey[2]));
+      else if (modeName === 'Vz') axisDir.copy(new THREE.Vector3(ez[0], ez[1], ez[2]));
+      else if (modeName === 'Mx') axisDir.copy(new THREE.Vector3(ex[0], ex[1], ex[2]));
+      else if (modeName === 'My') axisDir.copy(new THREE.Vector3(ez[0], ez[1], ez[2]));
+      else if (modeName === 'Mz') axisDir.copy(new THREE.Vector3(ey[0], ey[1], ey[2]));
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const x = t * info.L;
+        const base = new THREE.Vector3().lerpVectors(p1, p2, t);
+        const off = axisDir.clone().multiplyScalar(vals[i] * scaleFac);
+        pts.push(base.x + off.x, base.y + off.y, base.z + off.z);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: vals[vals.length - 1] >= 0 ? 0x1565c0 : 0xc62828 }));
+      diagG.add(line);
+    }
+
+    function updateTables() {
+      const wrap = document.getElementById('tableWrap');
+      const active = document.querySelector('.bottom-tabs button.active')?.dataset.t || 'nodes';
+      if (active === 'results') {
+        wrap.style.display = 'none';
+        document.getElementById('resultsPanel').classList.add('active');
+        showResults();
+        return;
+      }
+      document.getElementById('resultsPanel').classList.remove('active');
+      wrap.style.display = 'block';
+
+      let html = '';
+      if (active === 'nodes') {
+        html = `<table class="data"><thead><tr><th class="id">nr</th><th>x</th><th>y</th><th>z</th><th></th></tr></thead><tbody>`;
+        nodes.forEach(n => {
+          const sel = selected.type === 'node' && selected.id === n.id ? 'selected' : '';
+          html += `<tr class="${sel}" onclick="select('node', ${n.id})">
+            <td class="id">${n.id}</td>
+            <td><input type="number" step="0.1" value="${n.x}" onchange="const e=nodes.find(x=>x.id===${n.id}); if(e){ e.x=+this.value; results=null; updateViz(); }"></td>
+            <td><input type="number" step="0.1" value="${n.y}" onchange="const e=nodes.find(x=>x.id===${n.id}); if(e){ e.y=+this.value; results=null; updateViz(); }"></td>
+            <td><input type="number" step="0.1" value="${n.z}" onchange="const e=nodes.find(x=>x.id===${n.id}); if(e){ e.z=+this.value; results=null; updateViz(); }"></td>
+            <td><button onclick="event.stopPropagation(); select('node', ${n.id}); deleteSelected()">✕</button></td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      } else if (active === 'bars') {
+        html = `<table class="data"><thead><tr><th>nr</th><th>n1</th><th>n2</th><th>L</th><th>Przekrój</th><th></th></tr></thead><tbody>`;
+        bars.forEach(b => {
+          const n1 = nodes.find(n => n.id === b.n1), n2 = nodes.find(n => n.id === b.n2);
+          const L = n1 && n2 ? Math.hypot(n2.x - n1.x, n2.y - n1.y, n2.z - n1.z).toFixed(2) : '—';
+          html += `<tr onclick="select('bar', ${b.id})"><td>${b.id}</td><td>${b.n1}</td><td>${b.n2}</td><td>${L}</td><td>${b.section || ''}</td><td><button onclick="event.stopPropagation(); select('bar', ${b.id}); deleteSelected()">✕</button></td></tr>`;
+        });
+        html += '</tbody></table>';
+      } else if (active === 'supports') {
+        html = `<table class="data"><thead><tr><th>nr</th><th>węzeł</th><th>typ</th><th></th></tr></thead><tbody>`;
+        supports.forEach(s => {
+          const typ = s.type || 'roller';
+          html += `<tr><td>${s.id}</td><td>${s.node}</td><td>${typ}</td><td><button onclick="supports = supports.filter(x => x.id !== ${s.id}); updateAll()">✕</button></td></tr>`;
+        });
+        html += '</tbody></table>';
+      } else if (active === 'sections') {
+        html = `<table class="data"><thead><tr><th>Pręt</th><th>Przekrój</th><th>Materiał</th></tr></thead><tbody>`;
+        bars.forEach(b => html += `<tr><td>${b.id}</td><td>${b.section}</td><td>${b.material}</td></tr>`);
+        html += '</tbody></table><div style="padding:8px"><button onclick="openSectionModal()">Przypisz przekrój</button></div>';
+      } else if (active === 'loads') {
+        html = `<table class="data"><thead><tr><th>nr</th><th>typ</th><th>cel</th><th>Fx/qx</th><th>Fy/qy</th><th>Fz/qz</th><th></th></tr></thead><tbody>`;
+        loads.forEach(l => html += `<tr><td>${l.id}</td><td>${l.type}</td><td>${l.target}</td><td>${l.fx ?? l.qx ?? 0}</td><td>${l.fy ?? l.qy ?? 0}</td><td>${l.fz ?? l.qz ?? 0}</td><td><button onclick="loads = loads.filter(x => x.id !== ${l.id}); updateAll()">✕</button></td></tr>`);
+        html += '</tbody></table>';
+      }
+      wrap.innerHTML = html;
+    }
+
+    function updateAll() { updateViz(); updateTables(); }
+
+    function openSectionModal() {
+      const sel = document.getElementById('secSelect');
+      sel.innerHTML = '';
+      Object.keys(SECTIONS).forEach(k => {
+        const o = document.createElement('option'); o.value = k; o.textContent = k; sel.appendChild(o);
+      });
+      document.getElementById('sectionModal').classList.add('show');
+    }
+
+    function closeModal() { document.getElementById('sectionModal').classList.remove('show'); }
+
+    let pendingLoad = null;
+
+    function openLoadModal(type, target) {
+      pendingLoad = { type, target };
+      const isBar = type === 'bar';
+      document.getElementById('loadModalTitle').textContent = isBar ? `Obciążenie rozłożone – pręt ${target}` : `Siła węzłowa – węzeł ${target}`;
+      document.getElementById('loadModalHint').textContent = isBar ? 'Składowe obciążenia równomiernego q w osiach globalnych [kN/m]' : 'Składowe siły skupionej F w osiach globalnych [kN]';
+      document.getElementById('loadLabX').textContent = isBar ? 'qx [kN/m]:' : 'Fx [kN]:';
+      document.getElementById('loadLabY').textContent = isBar ? 'qy [kN/m]:' : 'Fy [kN]:';
+      document.getElementById('loadLabZ').textContent = isBar ? 'qz [kN/m] (↓ ujemny):' : 'Fz [kN] (↓ ujemny):';
+      document.getElementById('loadX').value = 0;
+      document.getElementById('loadY').value = 0;
+      document.getElementById('loadZ').value = isBar ? -5 : -10;
+      document.getElementById('loadModal').classList.add('show');
+    }
+
+    function closeLoadModal() {
+      document.getElementById('loadModal').classList.remove('show');
+      pendingLoad = null;
+    }
+
+    function applyLoadModal() {
+      if (!pendingLoad) return;
+      const x = parseFloat(document.getElementById('loadX').value) || 0;
+      const y = parseFloat(document.getElementById('loadY').value) || 0;
+      const z = parseFloat(document.getElementById('loadZ').value) || 0;
+      if (Math.abs(x) < 1e-12 && Math.abs(y) < 1e-12 && Math.abs(z) < 1e-12) {
+        toast('Podaj przynajmniej jedną składową'); return;
+      }
+      pushHistory();
+      if (pendingLoad.type === 'node') {
+        loads.push({ id: nextL++, type:'node', target: pendingLoad.target, fx:x, fy:y, fz:z });
+        toast('F = (' + x + ', ' + y + ', ' + z + ') kN na węźle ' + pendingLoad.target);
+      } else {
+        loads = loads.filter(l => !(l.type === 'bar' && l.target === pendingLoad.target));
+        loads.push({ id: nextL++, type:'bar', target: pendingLoad.target, qx:x, qy:y, qz:z });
+        toast('q = (' + x + ', ' + y + ', ' + z + ') kN/m na pręcie ' + pendingLoad.target);
+      }
+      closeLoadModal();
+      updateAll();
+    }
+
+    function applySection() {
+      const mat = document.getElementById('matSelect').value;
+      const sec = document.getElementById('secSelect').value;
+      const st = secStiff(sec, mat);
+      const target = document.getElementById('secTarget').value;
+      if (target === 'all') bars.forEach(b => Object.assign(b, st));
+      else if (selected.type === 'bar') {
+        const b = bars.find(x => x.id === selected.id);
+        if (b) Object.assign(b, st);
+      } else {
+        toast('Zaznacz pręt lub wybierz wszystkie'); return;
+      }
+      results = null; closeModal(); updateAll(); toast('Przekrój OK');
+    }
+
+    function loadBeam() {
+      newModel();
+      addNode(0,0,0); addNode(6,0,0);
+      addBar(1,2);
+      addSupport(1,'pin');
+      addSupport(2,'roller');
+      loads.push({ id: nextL++, type:'bar', target:1, qx:0, qy:0, qz:-10 });
+      bars.forEach(b => Object.assign(b, secStiff('IPE 200', 'S235')));
+      updateAll();
+      toast('Belka testowa 6m');
+      setWorkPlane('xy'); setView('iso');
+      setMode('geometria');
+    }
+
+    function loadFrame() {
+      newModel();
+      addNode(0,0,0); addNode(0,0,4); addNode(5,0,4); addNode(5,0,0);
+      addBar(1,2); addBar(2,3); addBar(3,4);
+      addSupport(1,'fixed'); addSupport(4,'fixed');
+      loads.push({ id: nextL++, type:'node', target:2, fx:15, fy:0, fz:0 });
+      loads.push({ id: nextL++, type:'bar', target:2, qx:0, qy:0, qz:-8 });
+      bars.forEach(b => Object.assign(b, secStiff('IPE 200','S235')));
+      updateAll();
+      toast('Rama portalowa 3D');
+      setWorkPlane('xy'); setView('iso');
+    }
+
+    function matVec(A, v) {
+      return A.map(row => row.reduce((s, a, i) => s + a * v[i], 0));
+    }
+
+    function transpose(A) {
+      return A[0].map((_, c) => A.map(r => r[c]));
+    }
+
+    function transformMatrix(K, T) {
+      const n = 12;
+      const KT = Array(n).fill(0).map(() => Array(n).fill(0));
+      const TT = Array(n).fill(0).map(() => Array(n).fill(0));
+      for (let i = 0; i < 12; i++) {
+        for (let j = 0; j < 12; j++) {
+          TT[i][j] = T[i][j];
+        }
+      }
+      for (let i = 0; i < 12; i++) {
+        for (let j = 0; j < 12; j++) {
+          let sum = 0;
+          for (let k = 0; k < 12; k++) sum += TT[k][i] * K[k][j];
+          KT[i][j] = sum;
+        }
+      }
+      const K2 = Array(n).fill(0).map(() => Array(n).fill(0));
+      for (let i = 0; i < 12; i++) {
+        for (let j = 0; j < 12; j++) {
+          let sum = 0;
+          for (let k = 0; k < 12; k++) sum += KT[i][k] * TT[k][j];
+          K2[i][j] = sum;
+        }
+      }
+      return K2;
+    }
+
+    function applyTransform(T, u) {
+      const out = Array(12).fill(0);
+      for (let i = 0; i < 12; i++) {
+        let s = 0;
+        for (let j = 0; j < 12; j++) s += T[i][j] * u[j];
+        out[i] = s;
+      }
+      return out;
+    }
+
+    function applyMatrix(K, u) {
+      const out = Array(u.length).fill(0);
+      for (let i = 0; i < K.length; i++) {
+        let s = 0;
+        for (let j = 0; j < u.length; j++) s += K[i][j] * u[j];
+        out[i] = s;
+      }
+      return out;
+    }
+
+    function subVec(a,b){ return a.map((v,i)=>v - (b[i]||0)); }
+
+    function beamTransform(n1,n2) {
+      const dx = n2.x - n1.x, dy = n2.y - n1.y, dz = n2.z - n1.z;
+      const L = Math.hypot(dx, dy, dz);
+      const ex = [dx / L, dy / L, dz / L];
+      let zRef = [0,0,1];
+      let ez = [zRef[0] - ex[0] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2]),
+                 zRef[1] - ex[1] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2]),
+                 zRef[2] - ex[2] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2])];
+      let norm = Math.hypot(ez[0], ez[1], ez[2]);
+      if (norm < 1e-8) {
+        zRef = [0,1,0];
+        ez = [zRef[0] - ex[0] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2]),
+              zRef[1] - ex[1] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2]),
+              zRef[2] - ex[2] * (ex[0] * zRef[0] + ex[1] * zRef[1] + ex[2] * zRef[2])];
+        norm = Math.hypot(ez[0], ez[1], ez[2]);
+      }
+      ez = [ez[0] / norm, ez[1] / norm, ez[2] / norm];
+      const ey = [ez[1] * ex[2] - ez[2] * ex[1], ez[2] * ex[0] - ez[0] * ex[2], ez[0] * ex[1] - ez[1] * ex[0]];
+      const lenEy = Math.hypot(ey[0], ey[1], ey[2]);
+      const eyN = [ey[0] / lenEy, ey[1] / lenEy, ey[2] / lenEy];
+      const ezN = [ex[1] * eyN[2] - ex[2] * eyN[1], ex[2] * eyN[0] - ex[0] * eyN[2], ex[0] * eyN[1] - ex[1] * eyN[0]];
+
+      const R = [
+        [ex[0], eyN[0], ezN[0]],
+        [ex[1], eyN[1], ezN[1]],
+        [ex[2], eyN[2], ezN[2]]
+      ];
+      const T = Array(12).fill(0).map(() => Array(12).fill(0));
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++) {
+          T[i][j] = R[i][j];
+          T[i + 6][j + 6] = R[i][j];
+          T[i + 3][j + 3] = R[i][j];
+          T[i + 9][j + 9] = R[i][j];
+        }
+      }
+      return { T, R, L, ex, ey: eyN, ez: ezN };
+    }
+
+    function localBeamMatrix(L, EA, EIy, EIz, GJ) {
+      const k = Array(12).fill(0).map(() => Array(12).fill(0));
+      const ax = EA / L;
+      const tq = GJ / L;
+      const by = 12 * EIz / (L * L * L);
+      const by2 = 6 * EIz / (L * L);
+      const by3 = 4 * EIz / L;
+      const by4 = 2 * EIz / L;
+      const bz = 12 * EIy / (L * L * L);
+      const bz2 = 6 * EIy / (L * L);
+      const bz3 = 4 * EIy / L;
+      const bz4 = 2 * EIy / L;
+
+      // axial ux
+      k[0][0] = ax; k[0][6] = -ax; k[6][0] = -ax; k[6][6] = ax;
+      // torsion around x
+      k[3][3] = tq; k[3][9] = -tq; k[9][3] = -tq; k[9][9] = tq;
+
+      // bending in local z / uy, theta_z
+      k[1][1] = by; k[1][5] = by2; k[1][7] = -by; k[1][11] = by2;
+      k[5][1] = by2; k[5][5] = by3; k[5][7] = -by2; k[5][11] = by4;
+      k[7][1] = -by; k[7][5] = -by2; k[7][7] = by; k[7][11] = -by2;
+      k[11][1] = by2; k[11][5] = by4; k[11][7] = -by2; k[11][11] = by3;
+
+      // bending in local y / uz, theta_y
+      k[2][2] = bz; k[2][4] = -bz2; k[2][8] = -bz; k[2][10] = -bz2;
+      k[4][2] = -bz2; k[4][4] = bz3; k[4][8] = bz2; k[4][10] = bz4;
+      k[8][2] = -bz; k[8][4] = bz2; k[8][8] = bz; k[8][10] = bz2;
+      k[10][2] = -bz2; k[10][4] = bz4; k[10][8] = bz2; k[10][10] = bz3;
+
+      return k;
+    }
+
+    function distributedLoadVector(L, qx, qy, qz) {
+      const f = Array(12).fill(0);
+      f[0] = qx * L / 2; f[6] = qx * L / 2;
+      f[1] = qy * L / 2; f[7] = qy * L / 2;
+      f[2] = qz * L / 2; f[8] = qz * L / 2;
+      f[5] = qy * L * L / 12; f[11] = -qy * L * L / 12;
+      f[4] = -qz * L * L / 12; f[10] = qz * L * L / 12;
+      return f;
+    }
+
+    function solveFEM() {
+      if (!nodes.length || !bars.length) { toast('Brak geometrii'); return null; }
+      if (!supports.length) { toast('Brak podpór'); return null; }
+
+      const nodeMap = {};
+      nodes.forEach((n, i) => nodeMap[n.id] = i);
+      const ndof = nodes.length * 6;
+      let K = Array(ndof).fill(0).map(() => Array(ndof).fill(0));
+      let F = Array(ndof).fill(0);
+
+      bars.forEach(bar => {
+        const n1 = nodes.find(n => n.id === bar.n1);
+        const n2 = nodes.find(n => n.id === bar.n2);
+        if (!n1 || !n2) return;
+        const { T, L } = beamTransform(n1, n2);
+        const Ke = localBeamMatrix(L, bar.EA, bar.EIy, bar.EIz, bar.GJ);
+        const Kg = transformMatrix(Ke, T);
+        const i1 = nodeMap[bar.n1] * 6;
+        const i2 = nodeMap[bar.n2] * 6;
+        const idx = [0,1,2,3,4,5, 6,7,8,9,10,11];
+        for (let i = 0; i < 12; i++) {
+          for (let j = 0; j < 12; j++) {
+            const gi = i < 6 ? i1 + idx[i] : i2 + idx[i] - 6;
+            const gj = j < 6 ? i1 + idx[j] : i2 + idx[j] - 6;
+            K[gi][gj] += Kg[i][j];
+          }
+        }
+      });
+
+      loads.forEach(ld => {
+        if (ld.type === 'node') {
+          const i = nodeMap[ld.target]; if (i === undefined) return;
+          const b = i * 6;
+          F[b] += ld.fx || 0; F[b + 1] += ld.fy || 0; F[b + 2] += ld.fz || 0;
+        } else if (ld.type === 'bar') {
+          const bar = bars.find(b => b.id === ld.target); if (!bar) return;
+          const n1 = nodes.find(n => n.id === bar.n1); const n2 = nodes.find(n => n.id === bar.n2); if (!n1 || !n2) return;
+          const { T, L } = beamTransform(n1, n2);
+          const qg = [ld.qx || 0, ld.qy || 0, ld.qz || 0];
+          const ql = matVec(transpose(T), qg);
+          const fL = distributedLoadVector(L, ql[0], ql[1], ql[2]);
+          const fG = applyTransform(transpose(T), fL);
+          const i1 = nodeMap[bar.n1] * 6;
+          const i2 = nodeMap[bar.n2] * 6;
+          for (let i = 0; i < 6; i++) {
+            F[i1 + i] += fG[i]; F[i2 + i] += fG[6 + i];
+          }
+        }
+      });
+
+      supports.forEach(s => {
+        const i = nodeMap[s.node]; if (i === undefined) return;
+        const b = i * 6;
+        if (s.kx) K[b][b] += s.kx;
+        if (s.ky) K[b + 1][b + 1] += s.ky;
+        if (s.kz) K[b + 2][b + 2] += s.kz;
+      });
+
+      const fixed = Array(ndof).fill(false);
+      supports.forEach(s => {
+        const i = nodeMap[s.node]; if (i === undefined) return;
+        const b = i * 6;
+        if (s.ux) fixed[b] = true; if (s.uy) fixed[b + 1] = true; if (s.uz) fixed[b + 2] = true;
+        if (s.rx) fixed[b + 3] = true; if (s.ry) fixed[b + 4] = true; if (s.rz) fixed[b + 5] = true;
+      });
+
+      const free = [];
+      for (let i = 0; i < ndof; i++) if (!fixed[i]) free.push(i);
+      if (!free.length) { toast('Wszystkie DOF utwierdzone'); return null; }
+
+      const Kf = Array(free.length).fill(0).map(() => Array(free.length).fill(0));
+      const Ff = Array(free.length).fill(0);
+      for (let i = 0; i < free.length; i++) {
+        Ff[i] = F[free[i]];
+        for (let j = 0; j < free.length; j++) Kf[i][j] = K[free[i]][free[j]];
+      }
+
+      const uf = gauss(Kf, Ff);
+      if (!uf) { toast('Układ osobliwy – za mało podpór lub mechanizm'); return null; }
+
+      const U = Array(ndof).fill(0);
+      free.forEach((d, i) => U[d] = uf[i]);
+      const R = Array(ndof).fill(0);
+      for (let i = 0; i < ndof; i++) {
+        let s = 0; for (let j = 0; j < ndof; j++) s += K[i][j] * U[j];
+        R[i] = s - F[i];
+      }
+
+      const barResults = {};
+      bars.forEach(bar => {
+        const n1 = nodes.find(n => n.id === bar.n1); const n2 = nodes.find(n => n.id === bar.n2); if (!n1 || !n2) return;
+        const { T, L } = beamTransform(n1, n2);
+        const Ke = localBeamMatrix(L, bar.EA, bar.EIy, bar.EIz, bar.GJ);
+        const i1 = nodeMap[bar.n1] * 6;
+        const i2 = nodeMap[bar.n2] * 6;
+        const uGlobal = [];
+        for (let i = 0; i < 6; i++) uGlobal.push(U[i1 + i]);
+        for (let i = 0; i < 6; i++) uGlobal.push(U[i2 + i]);
+        const uLocal = applyTransform(T, uGlobal);
+        const fe = applyMatrix(Ke, uLocal);
+        const qg = (loads.find(l => l.type === 'bar' && l.target === bar.id) || { qx:0, qy:0, qz:0 });
+        const qLocal = matVec(transpose(T), [qg.qx || 0, qg.qy || 0, qg.qz || 0]);
+        const fLoad = distributedLoadVector(L, qLocal[0], qLocal[1], qLocal[2]);
+        const fLocal = subVec(fe, fLoad);
+
+        const N1 = fLocal[0]; const N2 = -fLocal[6];
+        const Vy1 = fLocal[1]; const Vy2 = -fLocal[7];
+        const Vz1 = fLocal[2]; const Vz2 = -fLocal[8];
+        const Mx1 = fLocal[3]; const Mx2 = -fLocal[9];
+        const My1 = fLocal[4]; const My2 = -fLocal[10];
+        const Mz1 = fLocal[5]; const Mz2 = -fLocal[11];
+
+        barResults[bar.id] = {
+          L,
+          N1, N2,
+          Vy1, Vy2,
+          Vz1, Vz2,
+          Mx1, Mx2,
+          My1, My2,
+          Mz1, Mz2,
+          qLocal: qLocal,
+          local: {
+            N1, N2, Vy1, Vy2, Vz1, Vz2, Mx1, Mx2, My1, My2, Mz1, Mz2
+          }
+        };
+      });
+
+      const reac = {};
+      supports.forEach(s => {
+        const i = nodeMap[s.node]; if (i === undefined) return;
+        const b = i * 6;
+        const Fx = s.kx ? -(s.kx) * U[b] : R[b];
+        const Fy = s.ky ? -(s.ky) * U[b + 1] : R[b + 1];
+        const Fz = s.kz ? -(s.kz) * U[b + 2] : R[b + 2];
+        reac[s.id] = { node: s.node, Fx, Fy, Fz, Mx: R[b + 3], My: R[b + 4], Mz: R[b + 5], type:s.type };
+      });
+
+      return { U, reactions: reac, barResults };
+    }
+
+    function gauss(A, b) {
+      const n = A.length;
+      const M = A.map((row, i) => [...row, b[i]]);
+      for (let c = 0; c < n; c++) {
+        let pivot = c;
+        for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[pivot][c])) pivot = r;
+        if (Math.abs(M[pivot][c]) < 1e-12) return null;
+        [M[c], M[pivot]] = [M[pivot], M[c]];
+        for (let r = c + 1; r < n; r++) {
+          const factor = M[r][c] / M[c][c];
+          for (let j = c; j <= n; j++) M[r][j] -= factor * M[c][j];
+        }
+      }
+      const x = Array(n).fill(0);
+      for (let i = n - 1; i >= 0; i--) {
+        let sum = M[i][n];
+        for (let j = i + 1; j < n; j++) sum -= M[i][j] * x[j];
+        x[i] = sum / M[i][i];
+      }
+      return x;
+    }
+
+    function runAnalysis() {
+      results = solveFEM();
+      if (results) {
+        setStatus('OK – przejdź do Wyniki');
+        const reactionList = Object.values(results.reactions);
+        const sumFz = reactionList.reduce((s, r) => s + r.Fz, 0);
+        const sumLoadFz = loads.reduce((s, l) => {
+          if (l.type === 'node') return s + (l.fz || 0);
+          if (l.type === 'bar') {
+            const bar = bars.find(b => b.id === l.target);
+            if (!bar) return s;
+            const n1 = nodes.find(n => n.id === bar.n1); const n2 = nodes.find(n => n.id === bar.n2);
+            if (!n1 || !n2) return s;
+            const L = Math.hypot(n2.x - n1.x, n2.y - n1.y, n2.z - n1.z);
+            return s + (l.qz || 0) * L;
+          }
+          return s;
+        }, 0);
+        console.log('Reakcje', results.reactions);
+        console.log('Siły', results.barResults);
+        console.log('ΣFz reakcji=', sumFz.toFixed(3), 'ΣFz obc=', sumLoadFz.toFixed(3));
+        toast('OK. ΣFz reakcji=' + sumFz.toFixed(1) + ' / obc.=' + sumLoadFz.toFixed(1));
+        setMode('wyniki');
+      } else setStatus('Błąd obliczeń');
+    }
+
+    function showResults() {
+      if (!results) return;
+      let r = '';
+      Object.values(results.reactions).forEach(x => {
+        r += `Węzeł ${x.node}:
+  Fx=${x.Fx.toFixed(2)}  Fy=${x.Fy.toFixed(2)}  Fz=${x.Fz.toFixed(2)} kN
+  Mx=${x.Mx.toFixed(2)}  My=${x.My.toFixed(2)}  Mz=${x.Mz.toFixed(2)} kNm
+\n`;
+      });
+      document.getElementById('resReactions').textContent = r || '—';
+
+      let f = '';
+      Object.entries(results.barResults).forEach(([id, v]) => {
+        f += `Pręt ${id} (L=${v.L.toFixed(2)} m):\n`;
+        f += `  Nx: ${v.N1.toFixed(2)} | ${v.N2.toFixed(2)} kN\n`;
+        f += `  Ny: ${v.Vy1.toFixed(2)} | ${v.Vy2.toFixed(2)} kN\n`;
+        f += `  Nz: ${v.Vz1.toFixed(2)} | ${v.Vz2.toFixed(2)} kN\n`;
+        f += `  Vx: ${v.Mx1.toFixed(2)} | ${v.Mx2.toFixed(2)} kNm\n`;
+        f += `  My: ${v.My1.toFixed(2)} | ${v.My2.toFixed(2)} kNm\n`;
+        f += `  Mz: ${v.Mz1.toFixed(2)} | ${v.Mz2.toFixed(2)} kNm\n\n`;
+      });
+      document.getElementById('resForces').textContent = f || '—';
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
